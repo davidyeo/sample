@@ -1,0 +1,81 @@
+#!/bin/bash
+# Heartbeat script for failover and notification of Nagios cluster.
+# David Yeo
+# 2011-12-16
+
+
+#Executable variables and location of critical files.
+RM="/bin/rm -f"
+MV="/bin/mv"
+ECHO="/bin/echo -e"
+MAILER="/usr/sbin/sendmail"
+SUBJECT_SWITCH="URGENT: Nagios master process switch has taken place."
+SUBJECT_CORRUPTION="URGENT: retentions.dat transfer failed!!!"
+RECIPIENT="infrastructure@asdfasdf.com"
+
+NAGIOS="/etc/init.d/nagios"
+NDO="/etc/init.d/nagios_ndo"
+CENTSTORAGE="/etc/init.d/centstorage"
+CENTREON="/etc/init.d/centcore"
+RETENTIONFILE=/usr/local/nagios/var/retention.dat
+THISSERVER=`hostname`
+
+#What server am I on?
+if [ ${THISSERVER} == "nas01.asdfasdf.com" ]; then
+        OTHERHOST="192.168.10.1";
+		CHOWNTO="apache";
+		ADDRESS="http://8.8.8.8:4481/centreon"
+else
+        OTHERHOST="192.168.10.2";
+		CHOWNTO="apache";
+		ADDRESS="https://9.9.9.9/centreon"
+fi
+
+#ENSURE ONLY ONE COPY OF WATCHDOG-NAGIOS CAN RUN AT A TIME...
+PIDFILE=/var/run/nagios-watchdog.pid
+if [ -e ${PIDFILE} ]; then
+        exit 1;
+else
+        touch ${PIDFILE};
+fi
+
+#CHECK THE DAEMON STATUS ON THE OTHER HOST...
+su nagios -c "ssh ${OTHERHOST} \"/etc/init.d/nagios status\" > /dev/null 2>&1";
+
+#IS THE OTHER HOST ACTIVE?
+if [ $? -eq 0 ]; then
+                #THEN STOP NAGIOS ON ME
+                ${NAGIOS} stop > /dev/null 2>&1;
+                ${NDO} stop > /dev/null 2>&1;
+                ${CENTSTORAGE} stop > /dev/null 2>&1;
+                ${CENTREON} stop > /dev/null 2>&1;
+
+
+                #COPY THE RETENTION DATA FROM THE OTHER NAGIOS HOST
+                su nagios -c "scp ${OTHERHOST}:${RETENTIONFILE} /tmp/";
+
+                #VERIFY THAT WE DIDN'T GET A CORRUPTED COPY
+                if [ `grep "}" /tmp/retention.dat | wc -l` -eq `grep "}" /tmp/retention.dat | wc -l` ]; then
+                ${MV} /tmp/retention.dat ${RETENTIONFILE};
+                    else
+                    ${RM} /tmp/retention.dat;
+                    ${ECHO} "From: ${THISSERVER} \nSubject: ${SUBJECT_CORRUPTION}\nTo: ${RECIPIENT}\nFile transfer of retentions.dat to ${THISSERVER} failed. Possible file corruption." | ${MAILER} ${RECIPIENT};
+                fi
+
+                else
+
+                ${NAGIOS} status > /dev/null 2>&1;
+
+			  #NOTIFICATION OF NAGIOS FAILOVER AND STARTUP NAGIOS/CENTREON SERVICES ON THIS SERVER
+                if [ $? -ne 0 ]; then
+                	${ECHO} "From: ${THISSERVER} \nSubject: ${SUBJECT_SWITCH}\nTo: ${RECIPIENT}\nNow running on host ${THISSERVER}\n\n${ADDRESS}" | ${MAILER} ${RECIPIENT};
+                    ${NAGIOS} start /dev/null 2>&1;
+                    ${NDO} start /dev/null 2>&1;
+                    ${CENTSTORAGE} start /dev/null 2>&1;
+                    ${CENTREON} start /dev/null 2>&1;
+                fi
+fi
+
+${RM} ${PIDFILE};
+
+exit 0;
