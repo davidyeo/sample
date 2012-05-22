@@ -23,12 +23,12 @@ THISSERVER=`hostname`
 #What server am I on?
 if [ ${THISSERVER} == "nas01.asdfasdf.com" ]; then
         OTHERHOST="192.168.10.1";
-		CHOWNTO="apache";
-		ADDRESS="http://8.8.8.8:4481/centreon"
+	CHOWNTO="apache";
+	ADDRESS="http://8.8.8.8:4481/centreon"
 else
         OTHERHOST="192.168.10.2";
-		CHOWNTO="apache";
-		ADDRESS="https://9.9.9.9/centreon"
+	CHOWNTO="apache";
+	ADDRESS="https://9.9.9.9/centreon"
 fi
 
 #ENSURE ONLY ONE COPY OF WATCHDOG-NAGIOS CAN RUN AT A TIME...
